@@ -1,0 +1,60 @@
+name: CI # action 的名称
+
+on: # 什么时候触发 action
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  builds:
+    runs-on: ubuntu-latest
+    steps: # 步骤
+      - name: "拉取仓库代码"
+        uses: actions/checkout@v3
+      - name: "设置 JDK 环境"
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: "输出 JDK 的版本"
+        run: java -version
+      - name: 登录到 DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: "安装 Maven 环境"
+        uses: stCarolas/setup-maven@v4.5
+        with:
+          maven-version: 3.8.2
+      - name: "输出 Maven 的版本"
+        run: mvn -v
+      - name: "设置 Maven 缓存"
+        uses: skjolber/maven-cache-github-action@v2.0
+        with:
+          step: restore
+      - name: "Maven 编译"
+        run: mvn clean install -Dmaven.test.skip=true --batch-mode --update-snapshots verify
+      - name: "保存 Maven 缓存"
+        uses: skjolber/maven-cache-github-action@v2.0
+        with:
+          step: save
+      - name: 构建镜像
+        run: |
+          pwd && ls -lah 
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/argocd-springboot:${{github.sha}} .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/argocd-springboot:${{github.sha}}
+      - name: 触发 Trigger CI
+        uses: InformaticsMatters/trigger-ci-action@1.0.1
+        with:
+          ci-owner: Aurorxa
+          ci-repository: argocd-demo-kustomize
+          ci-ref: refs/heads/master
+          ci-user: Aurorxa
+          ci-user-token: ${{ secrets.CI_TOKEN }}
+          ci-name: CD
+          ci-inputs: >-
+            image=${{ secrets.DOCKERHUB_USERNAME }}/argocd-springboot
+            sha-tag=${{github.sha}}
+                 
